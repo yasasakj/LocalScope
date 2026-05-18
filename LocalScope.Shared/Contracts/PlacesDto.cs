@@ -28,7 +28,7 @@ public record PlaceSummaryDto
     public bool? IsOpenNow { get; init; }
     public double? Rating { get; init; }
     public string[]? Categories { get; init; }
-    public double Score { get; init; }
+    public double? Score { get; init; } // Сделали nullable, так как на сервере мы проверяли .HasValue
     public string Source { get; init; } = string.Empty;
 }
 
@@ -52,3 +52,8 @@ public record LocationDto
     public double Latitude { get; init; }
     public double Longitude { get; init; }
 }
+
+/// <summary>
+/// Алиас-заглушка для обратной совместимости с Blazor-компонентами
+/// </summary>
+public record PlacesDto : PlaceSummaryDto { }

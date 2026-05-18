@@ -23,6 +23,17 @@ public record WeatherSnapshotDto
     public double? PrecipitationMm { get; init; }
     public string Condition { get; init; } = string.Empty;
     public int? CloudCover { get; init; }
-    public int ComfortScore { get; init; }
+    public int? ComfortScore { get; init; } // Сделали nullable, так как в UI идет проверка .HasValue
     public string ComfortDescription { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// Единый DTO для фронтенда Blazor, объединяющий текущую погоду и прогноз
+/// </summary>
+public record WeatherDto : WeatherSnapshotDto
+{
+    /// <summary>
+    /// Прогноз погоды на несколько дней вперед
+    /// </summary>
+    public List<WeatherSnapshotDto> Forecast { get; init; } = new();
 }

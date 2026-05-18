@@ -13,8 +13,8 @@ builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.
 // Настройка типизированного API клиента
 builder.Services.AddHttpClient<LocalScopeApiClient>(client =>
 {
-    // В production здесь будет URL вашего API
-    client.BaseAddress = new Uri(builder.Configuration["ApiBaseUrl"] ?? "http://localhost:5000");
+    // Изменили порт по умолчанию с 5000 на 5108, на котором реально запущен твой бэкенд
+    client.BaseAddress = new Uri(builder.Configuration["ApiBaseUrl"] ?? "http://localhost:5108/");
 });
 
 await builder.Build().RunAsync();

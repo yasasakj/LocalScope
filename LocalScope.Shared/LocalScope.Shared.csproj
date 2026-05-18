@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFrameworks>net9.0;net9.0-android</TargetFrameworks>
+        <TargetFramework>net9.0</TargetFramework>
         <RuntimeIdentifiers Condition="$(TargetFramework.Contains('-android'))">android-x64;android-arm64</RuntimeIdentifiers>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>

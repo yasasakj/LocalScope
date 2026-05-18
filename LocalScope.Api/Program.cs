@@ -1,12 +1,50 @@
+using LocalScope.Api.Endpoints;
+using LocalScope.Api.Middleware; // Подключили пространство имен для Middleware
+using LocalScope.Domain.Abstractions;
+using LocalScope.Infrastructure.OpenMeteo;
+using LocalScope.Infrastructure.Yandex;
+using LocalScope.Infrastructure.TwoGis;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+// Добавляем поддержку OpenAPI (Swagger)
 builder.Services.AddOpenApi();
+
+// Настройка CORS (Разрешаем фронтенду на Blazor/MAUI слать запросы к API)
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.AllowAnyOrigin()
+            .AllowAnyMethod()
+            .AllowAnyHeader();
+    });
+});
+
+// --- РЕГИСТРАЦИЯ СЕРВИСОВ ИЗ СЛОЯ INFRASTRUCTURE (Dependency Injection) ---
+// HttpClient регистрируем отдельно для каждого провайдера, чтобы внутри них 
+// можно было гибко настраивать BaseAddress, таймауты и заголовки.
+builder.Services.AddHttpClient<IGeocodingProvider, YandexGeocoderClient>(client => {
+    client.BaseAddress = new Uri("https://geocode-maps.yandex.ru/1.x/");
+});
+builder.Services.AddHttpClient<IPlacesProvider, TwoGisSearchClient>(client => {
+    client.BaseAddress = new Uri("https://catalog.api.2gis.com/");
+});
+builder.Services.AddHttpClient<IWeatherProvider, OpenMeteoClient>(client => {
+    client.BaseAddress = new Uri("https://api.open-meteo.com/v1/");
+});
+// -------------------------------------------------------------------------
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// Включаем твое глобальное Middleware для централизованной обработки ошибок.
+// Важно: оно должно стоять самым первым, чтобы ловить ошибки из всех слоев ниже!
+app.UseErrorHandling();
+
+// Включаем CORS middleware
+app.UseCors();
+
+// Настройка Swagger для среды разработки
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -14,28 +52,11 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-    {
-        var forecast = Enumerable.Range(1, 5).Select(index =>
-                new WeatherForecast
-                (
-                    DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-                    Random.Shared.Next(-20, 55),
-                    summaries[Random.Shared.Next(summaries.Length)]
-                ))
-            .ToArray();
-        return forecast;
-    })
-    .WithName("GetWeatherForecast");
+// --- ПОДКЛЮЧАЕМ МАРШРУТЫ ИЗ ПАПКИ ENDPOINTS ---
+app.MapGeocodeEndpoints();
+app.MapPlacesEndpoints();
+app.MapSessionEndpoints();
+app.MapWeatherEndpoints();
+// ----------------------------------------------
 
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}

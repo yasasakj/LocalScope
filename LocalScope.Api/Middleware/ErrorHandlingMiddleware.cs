@@ -1,5 +1,8 @@
 using System.Net;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace LocalScope.Api.Middleware;
 
@@ -10,11 +13,16 @@ public class ErrorHandlingMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly ILogger<ErrorHandlingMiddleware> _logger;
+    private readonly IHostEnvironment _env;
 
-    public ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandlingMiddleware> logger)
+    public ErrorHandlingMiddleware(
+        RequestDelegate next, 
+        ILogger<ErrorHandlingMiddleware> logger,
+        IHostEnvironment env) // Добавили проверку окружения (Dev/Prod)
     {
         _next = next;
         _logger = logger;
+        _env = env;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -25,24 +33,31 @@ public class ErrorHandlingMiddleware
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unhandled exception occurred");
+            _logger.LogError(ex, "Произошло необработанное исключение при запросе к {Path}", context.Request.Path);
             await HandleExceptionAsync(context, ex);
         }
     }
 
-    private static Task HandleExceptionAsync(HttpContext context, Exception exception)
+    private async Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
-        var code = HttpStatusCode.InternalServerError;
-        var result = JsonSerializer.Serialize(new
-        {
-            error = exception.Message,
-            type = exception.GetType().Name
-        });
-
         context.Response.ContentType = "application/json";
-        context.Response.StatusCode = (int)code;
+        context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
 
-        return context.Response.WriteAsync(result);
+        // Если это Prod, скрываем детали внутренних ошибок ради безопасности.
+        // Если это Development, выводим сообщение как есть.
+        string errorMessage = _env.IsDevelopment() 
+            ? exception.Message 
+            : "На сервере произошла внутренняя ошибка. Пожалуйста, повторите запрос позже.";
+
+        var errorResponse = new
+        {
+            error = errorMessage,
+            type = exception.GetType().Name
+        };
+
+        // Пишем JSON напрямую в поток ответа (Response Stream). 
+        // Это гораздо быстрее и не засоряет память временными строками.
+        await JsonSerializer.SerializeAsync(context.Response.Body, errorResponse);
     }
 }
 

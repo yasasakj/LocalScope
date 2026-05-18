@@ -1,12 +1,13 @@
-namespace LocalScope.Infrastructure.Yandex;
+using System.Net.Http.Json;
 using System.Text.Json;
 using LocalScope.Domain.Abstractions;
 using LocalScope.Domain.Models;
 using Microsoft.Extensions.Configuration;
 
+namespace LocalScope.Infrastructure.Yandex;
 
 /// <summary>
-/// Клиент для поиска организаций через Яндекс API
+/// Клиент для поиска организаций через API Яндекса
 /// </summary>
 public class YandexSearchClient : IPlacesProvider
 {
@@ -17,8 +18,12 @@ public class YandexSearchClient : IPlacesProvider
     public YandexSearchClient(HttpClient httpClient, IConfiguration configuration)
     {
         _httpClient = httpClient;
-        _apiKey = configuration["Yandex:SearchApiKey"] ?? throw new InvalidOperationException("Yandex Search API key not configured");
-        _httpClient.BaseAddress = new Uri(BaseUrl);
+        _apiKey = configuration["Yandex:SearchApiKey"] ?? throw new InvalidOperationException("API-ключ Поиска организаций Яндекса не настроен в appsettings.json (секция Yandex:SearchApiKey).");
+        
+        if (_httpClient.BaseAddress == null)
+        {
+            _httpClient.BaseAddress = new Uri(BaseUrl);
+        }
     }
 
     public async Task<IReadOnlyList<Place>> SearchNearbyAsync(
@@ -29,71 +34,95 @@ public class YandexSearchClient : IPlacesProvider
         CancellationToken cancellationToken = default)
     {
         var text = category ?? "организация";
+        
+        // Переводим метры в приблизительный градусный радиус (spn) для более точного ограничения на стороне Яндекса
+        double spnDelta = (radiusMeters / 111000.0) * 2.0;
+        
         var url = $"?apikey={_apiKey}&text={Uri.EscapeDataString(text)}" +
                   $"&ll={center.Longitude:F6},{center.Latitude:F6}" +
-                  $"&spn=0.01,0.01&type=biz&results={limit}&lang=ru_RU";
+                  $"&spn={spnDelta:F4},{spnDelta:F4}&type=biz&results={limit}&lang=ru_RU";
 
-        var response = await _httpClient.GetAsync(url, cancellationToken);
-        response.EnsureSuccessStatusCode();
-
-        var json = await response.Content.ReadAsStringAsync(cancellationToken);
-        var data = JsonSerializer.Deserialize<YandexSearchResponse>(json, new JsonSerializerOptions
+        try
         {
-            PropertyNameCaseInsensitive = true
-        });
+            // Высокопроизводительное потоковое чтение JSON из сети
+            var data = await _httpClient.GetFromJsonAsync<YandexSearchResponse>(url, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            }, cancellationToken);
 
-        if (data?.Features == null)
-            return Array.Empty<Place>();
+            if (data?.Features == null)
+                return Array.Empty<Place>();
 
-        var places = data.Features
-            .Select(f => MapToPlace(f, center))
-            .Where(p => p.GetDistanceFrom(center) <= radiusMeters)
-            .Take(limit)
-            .ToList();
+            var places = data.Features
+                .Select(f => MapToPlace(f, center))
+                .Where(p => p != null && p.GetDistanceFrom(center) <= radiusMeters)
+                .Select(p => p!)
+                .Take(limit)
+                .ToList();
 
-        return places;
+            return places;
+        }
+        catch (Exception)
+        {
+            throw; // Пробрасываем ошибку в глобальное бэкенд-Middleware
+        }
     }
 
     public async Task<Place?> GetPlaceDetailsAsync(string placeId, CancellationToken cancellationToken = default)
     {
-        // Yandex Search API не поддерживает получение по ID напрямую
-        // Возвращаем null или можно реализовать поиск по названию
-        await Task.CompletedTask;
-        return null;
+        // Бесплатное API Поиска организаций Яндекса действительно не поддерживает прямые детальные запросы по ID.
+        // Корректно возвращаем null, эндпоинт обработает это как Status404NotFound.
+        return await Task.FromResult<Place?>(null);
     }
 
-    private static Place MapToPlace(YandexFeature feature, GeoPoint searchCenter)
+    private static Place? MapToPlace(YandexFeature feature, GeoPoint searchCenter)
     {
+        // Защитная проверка: если структура координат повреждена, пропускаем эту организацию
+        if (feature?.Geometry?.Coordinates == null || feature.Geometry.Coordinates.Count < 2)
+            return null;
+
         var coords = feature.Geometry.Coordinates;
-        var location = new GeoPoint(coords[1], coords[0]);
-        var props = feature.Properties.CompanyMetaData;
+        var location = new GeoPoint(coords[1], coords[0]); // Порядок Яндекса: [долгота, широта]
+        var props = feature.Properties?.CompanyMetaData;
+
+        // Извлекаем статус работы (открыто/закрыто) из структуры Яндекса Hours
+        bool? isOpenNow = null;
+        if (props?.Hours?.State != null)
+        {
+            isOpenNow = props.Hours.State.ToLowerInvariant() == "open";
+        }
 
         return new Place
         {
-            Id = feature.Properties.CompanyMetaData?.Id ?? Guid.NewGuid().ToString(),
-            Name = props?.Name ?? "Неизвестно",
-            Address = props?.Address ?? "",
+            Id = props?.Id ?? Guid.NewGuid().ToString(),
+            Name = props?.Name ?? "Неизвестная организация",
+            Address = props?.Address ?? "Адрес не указан",
             Location = location,
-            Categories = props?.Categories?.Select(c => c.Name).ToArray(),
+            Categories = props?.Categories?.Select(c => c.Name).ToArray() ?? Array.Empty<string>(),
             Phone = props?.Phones?.FirstOrDefault()?.Formatted,
             Website = props?.Url,
+            Rating = props?.Score, // Карта свойств Яндекса: Score содержит оценку/рейтинг организации
+            IsOpenNow = isOpenNow,
             Source = "yandex"
         };
     }
 }
 
-// DTOs для Yandex Search
+// Расширенные внутренние DTO для разбора полной структуры ответа Яндекса
 internal record YandexSearchResponse(List<YandexFeature>? Features);
-internal record YandexFeature(YandexGeometry Geometry, YandexProperties Properties);
-internal record YandexGeometry(List<double> Coordinates);
+internal record YandexFeature(YandexGeometry? Geometry, YandexProperties? Properties);
+internal record YandexGeometry(List<double>? Coordinates);
 internal record YandexProperties(YandexCompanyMetaData? CompanyMetaData);
 internal record YandexCompanyMetaData(
     string? Id,
     string? Name,
     string? Address,
     string? Url,
+    double? Score, // Рейтинг организации (обычно от 0 до 5)
+    YandexHours? Hours, // График работы
     List<YandexCategory>? Categories,
     List<YandexPhone>? Phones
 );
+internal record YandexHours(string? State, string? Text); // State может быть "open" или "closed"
 internal record YandexCategory(string Name);
 internal record YandexPhone(string Formatted);
