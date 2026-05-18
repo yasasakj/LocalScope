@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using LocalScope.Domain.Abstractions;
 using LocalScope.Domain.Models;
 
@@ -19,28 +20,51 @@ public class OpenMeteoClient : IWeatherProvider
         }
     }
 
-    public async Task<WeatherSnapshot?> GetCurrentWeatherAsync(GeoPoint location, CancellationToken cancellationToken = default)
+    public async Task<WeatherSnapshot?> GetCurrentWeatherAsync(
+        GeoPoint location, 
+        CancellationToken cancellationToken = default)
     {
-        var url = $"forecast?latitude={location.Latitude:F6}&longitude={location.Longitude:F6}" +
-                  "&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,rain,cloud_cover,wind_speed_10m" +
-                  "&timezone=auto";
+        var url = $"forecast" +  // ← Оставить v1/ так как BaseUrl без v1
+                  $"?latitude={location.Latitude.ToString(System.Globalization.CultureInfo.InvariantCulture)}" +
+                  $"&longitude={location.Longitude.ToString(System.Globalization.CultureInfo.InvariantCulture)}" +
+                  $"&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,rain,cloud_cover,wind_speed_10m,weather_code" +
+                  $"&timezone=auto";
+
+        Console.WriteLine($"OpenMeteo URL: {BaseUrl}{url}");
 
         try
         {
-            var data = await _httpClient.GetFromJsonAsync<OpenMeteoResponse>(url, new JsonSerializerOptions
+            var response = await _httpClient.GetAsync(url, cancellationToken);
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            Console.WriteLine($"OpenMeteo Status: {response.StatusCode}");
+
+            if (!response.IsSuccessStatusCode)
+            {
+                Console.WriteLine($"OpenMeteo Error: {responseBody}");
+                return GetDefaultFallbackWeather();
+            }
+
+            var options = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true
-            }, cancellationToken);
+            };
+
+            var data = JsonSerializer.Deserialize<OpenMeteoResponse>(responseBody, options);
 
             if (data?.Current == null)
+            {
+                Console.WriteLine("OpenMeteo: No current weather data");
                 return GetDefaultFallbackWeather();
+            }
+
+            Console.WriteLine($"OpenMeteo: Temp={data.Current.Temperature2m}°C, Wind={data.Current.WindSpeed10m}m/s");
 
             return MapToWeatherSnapshot(data.Current, DateTime.UtcNow);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Если сервер Open-Meteo упал (502, 504) или нет интернета, 
-            // не роняем приложение, а возвращаем безопасную заглушку погоды
+            Console.WriteLine($"OpenMeteo Error: {ex.Message}");
             return GetDefaultFallbackWeather();
         }
     }
@@ -50,44 +74,72 @@ public class OpenMeteoClient : IWeatherProvider
         int days = 3,
         CancellationToken cancellationToken = default)
     {
-        // Добавили слеш в начало пути запроса
-        var url = $"forecast?latitude={location.Latitude:F6}&longitude={location.Longitude:F6}" +
-                  $"&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max" +
-                  $"&forecast_days={days}&timezone=auto";
+        var url = $"forecast" +
+                  $"?latitude={location.Latitude.ToString(System.Globalization.CultureInfo.InvariantCulture)}" +
+                  $"&longitude={location.Longitude.ToString(System.Globalization.CultureInfo.InvariantCulture)}" +
+                  $"&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,weather_code" +
+                  $"&forecast_days={days}" +
+                  $"&timezone=auto";
+
+        Console.WriteLine($"OpenMeteo Forecast URL: {BaseUrl}{url}");
 
         try
         {
-            var data = await _httpClient.GetFromJsonAsync<OpenMeteoForecastResponse>(url, new JsonSerializerOptions
+            var response = await _httpClient.GetAsync(url, cancellationToken);
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                Console.WriteLine($"OpenMeteo Forecast Error: {responseBody}");
+                return Array.Empty<WeatherSnapshot>();
+            }
+
+            var options = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true
-            }, cancellationToken);
+            };
 
-            if (data?.Daily == null || data.Daily.Time == null)
+            var data = JsonSerializer.Deserialize<OpenMeteoForecastResponse>(responseBody, options);
+
+            if (data?.Daily?.Time == null || data.Daily.Time.Count == 0)
+            {
+                Console.WriteLine("OpenMeteo: No forecast data");
                 return Array.Empty<WeatherSnapshot>();
+            }
 
             var forecasts = new List<WeatherSnapshot>();
             for (int i = 0; i < data.Daily.Time.Count && i < days; i++)
             {
+                var weatherCode = i < (data.Daily.WeatherCode?.Count ?? 0) 
+                    ? data.Daily.WeatherCode![i] 
+                    : 0;
+
                 forecasts.Add(new WeatherSnapshot
                 {
-                    Timestamp = DateTime.TryParse(data.Daily.Time[i], out var date) ? date : DateTime.UtcNow,
-                    TemperatureCelsius = (data.Daily.Temperature_2m_max[i] + data.Daily.Temperature_2m_min[i]) / 2,
-                    WindSpeedMps = data.Daily.Wind_speed_10m_max[i],
-                    PrecipitationMm = data.Daily.Precipitation_sum[i],
-                    Condition = DetermineCondition(data.Daily.Precipitation_sum[i]),
+                    Timestamp = DateTime.TryParse(data.Daily.Time[i], out var date) 
+                        ? date 
+                        : DateTime.UtcNow.AddDays(i),
+                    TemperatureCelsius = Math.Round((data.Daily.Temperature2mMax[i] + data.Daily.Temperature2mMin[i]) / 2, 1),
+                    FeelsLikeCelsius = Math.Round((data.Daily.Temperature2mMax[i] + data.Daily.Temperature2mMin[i]) / 2, 1),
                     Humidity = 0,
-                    FeelsLikeCelsius = (data.Daily.Temperature_2m_max[i] + data.Daily.Temperature_2m_min[i]) / 2,
-                    CloudCover = 0
+                    WindSpeedMps = data.Daily.WindSpeed10mMax[i],
+                    PrecipitationMm = data.Daily.PrecipitationSum[i],
+                    CloudCover = null,
+                    Pressure = null,
+                    Condition = GetWeatherDescription(weatherCode)
                 });
             }
 
+            Console.WriteLine($"OpenMeteo Forecast: {forecasts.Count} days");
             return forecasts;
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine($"OpenMeteo Forecast Error: {ex.Message}");
             return Array.Empty<WeatherSnapshot>();
         }
     }
+
     private static WeatherSnapshot GetDefaultFallbackWeather()
     {
         return new WeatherSnapshot
@@ -99,6 +151,7 @@ public class OpenMeteoClient : IWeatherProvider
             WindSpeedMps = 0.0,
             PrecipitationMm = 0.0,
             CloudCover = 0,
+            Pressure = null,
             Condition = "Сервер погоды временно недоступен"
         };
     }
@@ -108,42 +161,73 @@ public class OpenMeteoClient : IWeatherProvider
         return new WeatherSnapshot
         {
             Timestamp = timestamp,
-            TemperatureCelsius = current.Temperature_2m,
-            FeelsLikeCelsius = current.Apparent_temperature,
-            Humidity = current.Relative_humidity_2m,
-            WindSpeedMps = current.Wind_speed_10m,
+            TemperatureCelsius = current.Temperature2m,
+            FeelsLikeCelsius = current.ApparentTemperature,
+            Humidity = current.RelativeHumidity2m,
+            WindSpeedMps = current.WindSpeed10m,
             PrecipitationMm = current.Precipitation ?? current.Rain ?? 0,
-            CloudCover = current.Cloud_cover ?? 0,
-            Condition = DetermineCondition(current.Precipitation ?? current.Rain ?? 0)
+            CloudCover = current.CloudCover ?? 0,
+            Pressure = null,
+            Condition = GetWeatherDescription(current.WeatherCode ?? 0)
         };
     }
 
-    private static string DetermineCondition(double precipitation)
+    private static string GetWeatherDescription(int weatherCode)
     {
-        return precipitation switch
+        return weatherCode switch
         {
-            > 5.0 => "Дождь",
-            > 0.5 => "Небольшой дождь",
+            0 => "Ясно",
+            1 => "Преимущественно ясно",
+            2 => "Переменная облачность",
+            3 => "Пасмурно",
+            45 or 48 => "Туман",
+            51 => "Легкая морось",
+            53 => "Морось",
+            55 => "Сильная морось",
+            61 => "Небольшой дождь",
+            63 => "Дождь",
+            65 => "Сильный дождь",
+            71 => "Небольшой снег",
+            73 => "Снег",
+            75 => "Сильный снег",
+            77 => "Снежные зерна",
+            80 => "Ливень",
+            81 => "Сильный ливень",
+            82 => "Очень сильный ливень",
+            85 => "Небольшой снегопад",
+            86 => "Сильный снегопад",
+            95 => "Гроза",
+            96 or 99 => "Гроза с градом",
             _ => "Ясно"
         };
     }
 }
 
-internal record OpenMeteoResponse(OpenMeteoCurrentData? Current);
-internal record OpenMeteoCurrentData(
-    double Temperature_2m,
-    int Relative_humidity_2m,
-    double Apparent_temperature,
-    double? Precipitation,
-    double? Rain,
-    int? Cloud_cover,
-    double Wind_speed_10m
+// --- МОДЕЛИ ОТВЕТА ---
+internal record OpenMeteoResponse(
+    [property: JsonPropertyName("current")] OpenMeteoCurrentData? Current
 );
-internal record OpenMeteoForecastResponse(OpenMeteoDailyData? Daily);
+
+internal record OpenMeteoCurrentData(
+    [property: JsonPropertyName("temperature_2m")] double Temperature2m,
+    [property: JsonPropertyName("relative_humidity_2m")] int RelativeHumidity2m,
+    [property: JsonPropertyName("apparent_temperature")] double ApparentTemperature,
+    [property: JsonPropertyName("precipitation")] double? Precipitation,
+    [property: JsonPropertyName("rain")] double? Rain,
+    [property: JsonPropertyName("cloud_cover")] int? CloudCover,
+    [property: JsonPropertyName("wind_speed_10m")] double WindSpeed10m,
+    [property: JsonPropertyName("weather_code")] int? WeatherCode
+);
+
+internal record OpenMeteoForecastResponse(
+    [property: JsonPropertyName("daily")] OpenMeteoDailyData? Daily
+);
+
 internal record OpenMeteoDailyData(
-    List<string> Time,
-    List<double> Temperature_2m_max,
-    List<double> Temperature_2m_min,
-    List<double> Precipitation_sum,
-    List<double> Wind_speed_10m_max
+    [property: JsonPropertyName("time")] List<string> Time,
+    [property: JsonPropertyName("temperature_2m_max")] List<double> Temperature2mMax,
+    [property: JsonPropertyName("temperature_2m_min")] List<double> Temperature2mMin,
+    [property: JsonPropertyName("precipitation_sum")] List<double> PrecipitationSum,
+    [property: JsonPropertyName("wind_speed_10m_max")] List<double> WindSpeed10mMax,
+    [property: JsonPropertyName("weather_code")] List<int>? WeatherCode
 );

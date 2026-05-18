@@ -19,17 +19,16 @@ public static class WeatherEndpoints
             .WithSummary("Получить погоду и прогноз");
     }
 
-        private static async Task<IResult> GetWeather(
-        HttpContext context, // Читаем строку запроса напрямую из контекста
+    private static async Task<IResult> GetWeather(
+        HttpContext context,
         IWeatherProvider weatherProvider,
         CancellationToken cancellationToken)
     {
-        // Принудительно вытаскиваем "lat" и "lon" по их текстовым именам
         var latStr = context.Request.Query["lat"].ToString();
         var lonStr = context.Request.Query["lon"].ToString();
         var daysStr = context.Request.Query["days"].ToString();
 
-// Универсальный парсер: заменяем точку на текущий системный разделитель (запятую или точку)
+        // Универсальный парсер координат
         string systemSeparator = CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator;
         latStr = latStr.Replace(".", systemSeparator).Replace(",", systemSeparator);
         lonStr = lonStr.Replace(".", systemSeparator).Replace(",", systemSeparator);
@@ -44,7 +43,6 @@ public static class WeatherEndpoints
         if (days < 1 || days > 7)
             return Results.BadRequest(new { error = "Количество дней в прогнозе должно быть от 1 до 7." });
 
-        // Теперь параметры ЖЕСТКО привязаны к своим именам из URL
         var location = new GeoPoint(lat, lon);
 
         var currentTask = weatherProvider.GetCurrentWeatherAsync(location, cancellationToken);
@@ -58,18 +56,21 @@ public static class WeatherEndpoints
         if (current == null)
             return Results.NotFound(new { error = "Данные о погоде сейчас недоступны." });
 
-        var response = new WeatherDto
+        var response = new WeatherResponse
         {
-            Timestamp = current.Timestamp,
-            TemperatureCelsius = current.TemperatureCelsius,
-            FeelsLikeCelsius = current.FeelsLikeCelsius,
-            Humidity = current.Humidity,
-            WindSpeedMps = current.WindSpeedMps,
-            PrecipitationMm = current.PrecipitationMm,
-            Condition = current.Condition,
-            CloudCover = current.CloudCover,
-            ComfortScore = current.GetComfortScore(),
-            ComfortDescription = current.GetComfortDescription(),
+            Now = new WeatherSnapshotDto
+            {
+                Timestamp = current.Timestamp,
+                TemperatureCelsius = current.TemperatureCelsius,
+                FeelsLikeCelsius = current.FeelsLikeCelsius,
+                Humidity = current.Humidity,
+                WindSpeedMps = current.WindSpeedMps,
+                PrecipitationMm = current.PrecipitationMm,
+                Condition = current.Condition,
+                CloudCover = current.CloudCover,
+                ComfortScore = current.GetComfortScore(),
+                ComfortDescription = current.GetComfortDescription()
+            },
             Forecast = forecast?.Select(f => new WeatherSnapshotDto
             {
                 Timestamp = f.Timestamp,
