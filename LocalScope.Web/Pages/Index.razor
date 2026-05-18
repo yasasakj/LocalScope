@@ -39,7 +39,8 @@
                     </div>
                 </div>
             }
-        </div>
+        </div></div>
+    
 
         <!-- Блок отображения погоды -->
         <div class="col-md-6">
@@ -47,7 +48,14 @@
             {
                 <div class="card mb-3">
                     <div class="card-body">
-                        <h5 class="card-title">🌤️ Текущая погода</h5>
+                        <div class="d-flex justify-content-between align-items-start">
+                            <h5 class="card-title">🌤️ Текущая погода</h5>
+                            <button class="btn btn-sm btn-outline-warning" 
+                                    @onclick="AddLocationToFavorites" 
+                                    disabled="@isLoading">
+                                ⭐ В избранное
+                            </button>
+                        </div>
                         <div class="d-flex align-items-center mb-2">
                             <h2 class="mb-0 me-3">@weatherData.Now.TemperatureCelsius.ToString("F1")°C</h2>
                             <div>
@@ -75,7 +83,6 @@
                 </div>
             }
         </div>
-    </div>
 
     <!-- Блок кастомного поиска мест -->
     @if (geocodeResult != null)
@@ -237,7 +244,27 @@
             errorMessage = $"Ошибка поиска мест: {ex.Message}";
         }
     }
-
+    private async Task AddLocationToFavorites()
+    {
+        if (geocodeResult == null) return;
+    
+        try
+        {
+            await ApiClient.AddToFavoritesAsync(new FavoritePlaceRequest
+            {
+                PlaceId = Guid.NewGuid().ToString(),
+                Name = geocodeResult.FormattedAddress ?? "Моё место",
+                Address = geocodeResult.FormattedAddress ?? "",
+                Latitude = geocodeResult.Latitude,
+                Longitude = geocodeResult.Longitude,
+                Category = "location"
+            });
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Ошибка сохранения: {ex.Message}";
+        }
+    }
     private async Task FilterCategory(string? category)
     {
         currentCategory = category;
