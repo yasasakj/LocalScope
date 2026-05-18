@@ -95,6 +95,11 @@ public class LocalScopeApiClient
             throw new Exception("Ошибка при получении списка заведений неподалеку.");
         }
     }
+    public async Task AddToFavoritesAsync(FavoritePlaceRequest request)
+    {
+        var response = await _httpClient.PostAsJsonAsync("/api/v1/places/favorites", request);
+        response.EnsureSuccessStatusCode();
+    }
 
     public async Task<PlaceDetailsDto?> GetPlaceDetailsAsync(string placeId)
     {

@@ -57,6 +57,7 @@ app.MapGeocodeEndpoints();
 app.MapPlacesEndpoints();
 app.MapSessionEndpoints();
 app.MapWeatherEndpoints();
+app.MapFavoritesEndpoints();
 // ----------------------------------------------
 
 app.Run();
