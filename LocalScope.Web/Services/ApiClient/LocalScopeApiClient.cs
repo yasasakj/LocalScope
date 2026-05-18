@@ -1,10 +1,12 @@
+using System.Globalization; // Обязательно добавили для InvariantCulture
 using System.Net.Http.Json;
 using LocalScope.Shared.Contracts;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace LocalScope.Web.Services.ApiClient;
 
 /// <summary>
-/// Typed HTTP client для вызовов LocalScope API с фронтенда
+/// Typed HTTP client для вызовов LocalScope API с фронтенда Blazor
 /// </summary>
 public class LocalScopeApiClient
 {
@@ -26,7 +28,7 @@ public class LocalScopeApiClient
         }
         catch
         {
-            return null; // Возвращаем null, чтобы UI обработал ошибку подключения
+            return null;
         }
     }
 
@@ -36,7 +38,6 @@ public class LocalScopeApiClient
 
         try
         {
-            // Убрали лишний слэш в начале URL, чтобы относительные пути HttpClient работали корректно
             return await _httpClient.GetFromJsonAsync<GeocodeResponse>($"api/v1/geocode?query={Uri.EscapeDataString(query)}");
         }
         catch (HttpRequestException)
@@ -47,9 +48,19 @@ public class LocalScopeApiClient
 
     public async Task<WeatherResponse?> GetWeatherAsync(double lat, double lon, int days = 3)
     {
+        // Принудительно форматируем координаты с ТОЧКОЙ вместо запятой перед отправкой на бэкенд
+        var queryParams = new Dictionary<string, string?>
+        {
+            { "lat", lat.ToString("F6", CultureInfo.InvariantCulture) },
+            { "lon", lon.ToString("F6", CultureInfo.InvariantCulture) },
+            { "days", days.ToString() }
+        };
+
+        var url = QueryHelpers.AddQueryString("api/v1/weather", queryParams);
+
         try
         {
-            return await _httpClient.GetFromJsonAsync<WeatherResponse>($"api/v1/weather?lat={lat}&lon={lon}&days={days}");
+            return await _httpClient.GetFromJsonAsync<WeatherResponse>(url);
         }
         catch (HttpRequestException)
         {
@@ -59,11 +70,21 @@ public class LocalScopeApiClient
 
     public async Task<PlacesNearbyResponse?> SearchPlacesAsync(double lat, double lon, string? category = null, int radius = 1000, int limit = 20)
     {
-        var url = $"api/v1/places/nearby?lat={lat}&lon={lon}&radius={radius}&limit={limit}";
+        // Принудительно форматируем координаты с ТОЧКОЙ вместо запятой перед отправкой на бэкенд
+        var queryParams = new Dictionary<string, string?>
+        {
+            { "lat", lat.ToString("F6", CultureInfo.InvariantCulture) },
+            { "lon", lon.ToString("F6", CultureInfo.InvariantCulture) },
+            { "radius", radius.ToString() },
+            { "limit", limit.ToString() }
+        };
+
         if (!string.IsNullOrEmpty(category))
         {
-            url += $"&category={Uri.EscapeDataString(category)}";
+            queryParams.Add("category", category);
         }
+
+        var url = QueryHelpers.AddQueryString("api/v1/places/nearby", queryParams);
 
         try
         {
