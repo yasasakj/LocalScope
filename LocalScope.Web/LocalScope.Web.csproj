@@ -15,4 +15,8 @@
       <ProjectReference Include="..\LocalScope.Shared\LocalScope.Shared.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+      <Folder Include="Services\ApiClient\" />
+    </ItemGroup>
+
 </Project>

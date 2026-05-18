@@ -11,4 +11,9 @@
       <ProjectReference Include="..\LocalScope.Shared\LocalScope.Shared.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+      <Folder Include="Caching\" />
+      <Folder Include="Http\" />
+    </ItemGroup>
+
 </Project>

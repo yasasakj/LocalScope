@@ -10,4 +10,15 @@
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.9"/>
     </ItemGroup>
 
+    <ItemGroup>
+      <ProjectReference Include="..\LocalScope.Domain\LocalScope.Domain.csproj" />
+      <ProjectReference Include="..\LocalScope.Infrastructure\LocalScope.Infrastructure.csproj" />
+      <ProjectReference Include="..\LocalScope.Shared\LocalScope.Shared.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Folder Include="Auth\" />
+      <Folder Include="Middleware\" />
+    </ItemGroup>
+
 </Project>

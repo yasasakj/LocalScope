@@ -69,4 +69,10 @@
       <ProjectReference Include="..\LocalScope.Shared\LocalScope.Shared.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+      <Folder Include="Services\ApiClient\" />
+      <Folder Include="ViewModels\" />
+      <Folder Include="Views\" />
+    </ItemGroup>
+
 </Project>
