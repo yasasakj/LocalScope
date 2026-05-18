@@ -60,6 +60,7 @@
     </ItemGroup>
 
     <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.Http.Polly" Version="9.0.0" />
         <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)"/>
         <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="9.0.9"/>
     </ItemGroup>
@@ -74,5 +75,10 @@
       <Folder Include="ViewModels\" />
       <Folder Include="Views\" />
     </ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\LocalScope.Shared\LocalScope.Shared.csproj" />
+		<ProjectReference Include="..\LocalScope.Domain\LocalScope.Domain.csproj" />
+	</ItemGroup>
 
 </Project>

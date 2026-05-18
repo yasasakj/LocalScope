@@ -1,5 +1,85 @@
 @LocalScope.Api_HostAddress = http://localhost:5108
+### LocalScope API Tests
+### Используйте это для тестирования API в Rider
 
+@host = http://localhost:5000
+@sessionToken = {{create-session.response.body.sessionToken}}
+
+### Health Check
+GET {{host}}/
+
+### 1. Создать сессию (POST)
+POST {{host}}/api/v1/sessions
+Content-Type: application/json
+
+{
+  "deviceId": "test-device-123",
+  "preferredCity": "Москва",
+  "units": "metric",
+  "defaultRadiusMeters": 1500
+}
+
+> {%
+    client.global.set("sessionToken", response.body.sessionToken);
+%}
+
+### 2. Геокодирование адреса (GET)
+GET {{host}}/api/v1/geocode?query=Москва, Красная площадь
+
+### 3. Геокодирование - Санкт-Петербург
+GET {{host}}/api/v1/geocode?query=Санкт-Петербург, Невский проспект 1
+
+### 4. Получить погоду (GET)
+# Москва
+GET {{host}}/api/v1/weather?lat=55.7558&lon=37.6173&days=3
+
+### 5. Погода - Санкт-Петербург
+GET {{host}}/api/v1/weather?lat=59.9343&lon=30.3351&days=5
+
+### 6. Поиск мест рядом - кафе
+GET {{host}}/api/v1/places/nearby?lat=55.7558&lon=37.6173&category=кафе&radius=1000&limit=10
+
+### 7. Поиск мест - рестораны
+GET {{host}}/api/v1/places/nearby?lat=55.7558&lon=37.6173&category=ресторан&radius=1500&limit=15
+
+### 8. Поиск мест - аптеки (только открытые)
+GET {{host}}/api/v1/places/nearby?lat=55.7558&lon=37.6173&category=аптека&radius=800&openNow=true&limit=5
+
+### 9. Поиск мест - достопримечательности
+GET {{host}}/api/v1/places/nearby?lat=55.7558&lon=37.6173&category=достопримечательность&radius=2000&limit=20
+
+### 10. Детали места (будет работать после получения ID из поиска)
+GET {{host}}/api/v1/places/place-id-from-search
+
+### 11. Полный сценарий: геокодирование + погода + места
+### Шаг 1: найти координаты
+GET {{host}}/api/v1/geocode?query=Казань, улица Баумана
+
+### Шаг 2: погода для найденных координат (Казань)
+GET {{host}}/api/v1/weather?lat=55.7887&lon=49.1221&days=3
+
+### Шаг 3: места рядом (Казань)
+GET {{host}}/api/v1/places/nearby?lat=55.7887&lon=49.1221&category=кафе&radius=1000&limit=10
+
+### Тесты валидации и ошибок
+
+### Ошибка: пустой query для geocode
+GET {{host}}/api/v1/geocode?query=
+
+### Ошибка: невалидный radius
+GET {{host}}/api/v1/places/nearby?lat=55.7558&lon=37.6173&radius=10000&limit=10
+
+### Ошибка: невалидное количество дней для прогноза
+GET {{host}}/api/v1/weather?lat=55.7558&lon=37.6173&days=10
+
+### Ошибка: пустой deviceId в сессии
+POST {{host}}/api/v1/sessions
+Content-Type: application/json
+
+{
+  "deviceId": "",
+  "units": "metric"
+}
 GET {{LocalScope.Api_HostAddress}}/weatherforecast/
 Accept: application/json
 

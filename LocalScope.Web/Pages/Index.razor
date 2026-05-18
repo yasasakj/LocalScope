@@ -1,0 +1,209 @@
+@page "/"
+@using LocalScope.Web.Services.ApiClient
+@using LocalScope.Shared.Contracts
+@inject LocalScopeApiClient ApiClient
+
+<PageTitle>LocalScope - Что вокруг меня</PageTitle>
+
+<div class="container mt-4">
+    <h1 class="mb-4">🌍 LocalScope - Что вокруг меня</h1>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">🔍 Поиск по адресу</h5>
+                    <div class="input-group mb-3">
+                        <input type="text" class="form-control" @bind="searchQuery" placeholder="Введите адрес...">
+                        <button class="btn btn-primary" @onclick="SearchLocation" disabled="@isLoading">
+                            @if (isLoading)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                            }
+                            Найти
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            @if (geocodeResult != null)
+            {
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="card-subtitle mb-2 text-muted">📍 Найденное местоположение</h6>
+                        <p class="mb-1"><strong>@geocodeResult.FormattedAddress</strong></p>
+                        <small class="text-muted">
+                            Координаты: @geocodeResult.Latitude.ToString("F6"), @geocodeResult.Longitude.ToString("F6")
+                        </small>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="col-md-6">
+            @if (weatherData != null)
+            {
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title">🌤️ Текущая погода</h5>
+                        <div class="d-flex align-items-center mb-2">
+                            <h2 class="mb-0 me-3">@weatherData.Now.TemperatureCelsius.ToString("F1")°C</h2>
+                            <div>
+                                <div>Ощущается: @(weatherData.Now.FeelsLikeCelsius?.ToString("F1") ?? "N/A")°C</div>
+                                <div class="text-muted">@weatherData.Now.Condition</div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-6">
+                                <small>💨 Ветер: @weatherData.Now.WindSpeedMps.ToString("F1") м/с</small>
+                            </div>
+                            <div class="col-6">
+                                <small>💧 Влажность: @weatherData.Now.Humidity%</small>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <span class="badge bg-@GetComfortBadgeColor(weatherData.Now.ComfortScore)">
+                                @weatherData.Now.ComfortDescription (Оценка: @weatherData.Now.ComfortScore/100)
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (places != null && places.Items.Any())
+    {
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">🍴 Места рядом</h5>
+                <div class="mb-3">
+                    <div class="btn-group" role="group">
+                        <button class="btn btn-sm btn-outline-primary" @onclick='() => SearchPlaces("кафе")'>Кафе</button>
+                        <button class="btn btn-sm btn-outline-primary" @onclick='() => SearchPlaces("ресторан")'>Рестораны</button>
+                        <button class="btn btn-sm btn-outline-primary" @onclick='() => SearchPlaces("аптека")'>Аптеки</button>
+                        <button class="btn btn-sm btn-outline-primary" @onclick='() => SearchPlaces(null)'>Все</button>
+                    </div>
+                </div>
+                <div class="list-group">
+                    @foreach (var place in places.Items.Take(10))
+                    {
+                        <div class="list-group-item">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">@place.Name</h6>
+                                <small>@place.DistanceMeters.ToString("F0") м</small>
+                            </div>
+                            <p class="mb-1 small text-muted">@place.Address</p>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small>
+                                    @if (place.Rating.HasValue)
+                                    {
+                                        <span class="me-2">⭐ @place.Rating.Value.ToString("F1")</span>
+                                    }
+                                    @if (place.IsOpenNow.HasValue)
+                                    {
+                                        <span class="badge bg-@(place.IsOpenNow.Value ? "success" : "danger")">
+                                            @(place.IsOpenNow.Value ? "Открыто" : "Закрыто")
+                                        </span>
+                                    }
+                                </small>
+                                <small class="text-muted">Оценка: @place.Score.ToString("F0")/100</small>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger mt-3">
+            @errorMessage
+        </div>
+    }
+</div>
+
+@code {
+    private string searchQuery = "Москва, Красная площадь";
+    private bool isLoading = false;
+    private string? errorMessage;
+
+    private GeocodeResponse? geocodeResult;
+    private WeatherResponse? weatherData;
+    private PlacesNearbyResponse? places;
+
+    private async Task SearchLocation()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery))
+            return;
+
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            geocodeResult = await ApiClient.GeocodeAsync(searchQuery);
+
+            if (geocodeResult != null)
+            {
+                await Task.WhenAll(
+                    LoadWeather(geocodeResult.Latitude, geocodeResult.Longitude),
+                    SearchPlaces(null)
+                );
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Ошибка: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadWeather(double lat, double lon)
+    {
+        try
+        {
+            weatherData = await ApiClient.GetWeatherAsync(lat, lon, 3);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Ошибка загрузки погоды: {ex.Message}";
+        }
+    }
+
+    private async Task SearchPlaces(string? category)
+    {
+        if (geocodeResult == null)
+            return;
+
+        try
+        {
+            places = await ApiClient.SearchPlacesAsync(
+                geocodeResult.Latitude, 
+                geocodeResult.Longitude, 
+                category, 
+                1500, 
+                20
+            );
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Ошибка поиска мест: {ex.Message}";
+        }
+    }
+
+    private string GetComfortBadgeColor(int score)
+    {
+        return score switch
+        {
+            >= 90 => "success",
+            >= 70 => "info",
+            >= 50 => "warning",
+            _ => "danger"
+        };
+    }
+}

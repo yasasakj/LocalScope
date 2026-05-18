@@ -18,6 +18,11 @@
         <Using Include="Xunit"/>
     </ItemGroup>
 
+        <ItemGroup>
+            <ProjectReference Include="..\LocalScope.Api\LocalScope.Api.csproj" />
+            <ProjectReference Include="..\LocalScope.Domain\LocalScope.Domain.csproj" />
+        </ItemGroup>
+
     <ItemGroup>
       <ProjectReference Include="..\LocalScope.Api\LocalScope.Api.csproj" />
       <ProjectReference Include="..\LocalScope.Domain\LocalScope.Domain.csproj" />
