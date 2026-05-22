@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  localscope:
+    build: .
+    ports:
+      - "5285:80"    # Web интерфейс
+      - "5108:5108"  # API для мобильного приложения
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+    restart: unless-stopped
+    network_mode: host  # Автоматически использует IP хоста
