@@ -1,13 +1,10 @@
-using System.Globalization; // Обязательно добавили для InvariantCulture
+using System.Globalization;
 using System.Net.Http.Json;
 using LocalScope.Shared.Contracts;
 using Microsoft.AspNetCore.WebUtilities;
 
 namespace LocalScope.Web.Services.ApiClient;
 
-/// <summary>
-/// Typed HTTP client для вызовов LocalScope API с фронтенда Blazor
-/// </summary>
 public class LocalScopeApiClient
 {
     private readonly HttpClient _httpClient;
@@ -17,38 +14,24 @@ public class LocalScopeApiClient
         _httpClient = httpClient;
     }
 
-    public async Task<SessionResponse?> CreateSessionAsync(SessionRequest request)
-    {
-        try
-        {
-            var response = await _httpClient.PostAsJsonAsync("api/v1/sessions", request);
-            if (!response.IsSuccessStatusCode) return null;
-            
-            return await response.Content.ReadFromJsonAsync<SessionResponse>();
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
     public async Task<GeocodeResponse?> GeocodeAsync(string query)
     {
         if (string.IsNullOrWhiteSpace(query)) return null;
 
         try
         {
-            return await _httpClient.GetFromJsonAsync<GeocodeResponse>($"api/v1/geocode?query={Uri.EscapeDataString(query)}");
+            // Автоматически определяет где запущен API
+            var apiUrl = GetApiUrl();
+            return await _httpClient.GetFromJsonAsync<GeocodeResponse>($"{apiUrl}/api/v1/geocode?query={Uri.EscapeDataString(query)}");
         }
         catch (HttpRequestException)
         {
-            throw new Exception("Не удалось связаться с сервером геокодирования. Проверьте подключение к сети.");
+            throw new Exception("Не удалось связаться с сервером геокодирования.");
         }
     }
 
     public async Task<WeatherResponse?> GetWeatherAsync(double lat, double lon, int days = 3)
     {
-        // Принудительно форматируем координаты с ТОЧКОЙ вместо запятой перед отправкой на бэкенд
         var queryParams = new Dictionary<string, string?>
         {
             { "lat", lat.ToString("F6", CultureInfo.InvariantCulture) },
@@ -57,20 +40,20 @@ public class LocalScopeApiClient
         };
 
         var url = QueryHelpers.AddQueryString("api/v1/weather", queryParams);
+        var apiUrl = GetApiUrl();
 
         try
         {
-            return await _httpClient.GetFromJsonAsync<WeatherResponse>(url);
+            return await _httpClient.GetFromJsonAsync<WeatherResponse>($"{apiUrl}/{url}");
         }
         catch (HttpRequestException)
         {
-            throw new Exception("Не удалось загрузить данные о погоде от сервера LocalScope.");
+            throw new Exception("Не удалось загрузить данные о погоде.");
         }
     }
 
     public async Task<PlacesNearbyResponse?> SearchPlacesAsync(double lat, double lon, string? category = null, int radius = 1000, int limit = 20)
     {
-        // Принудительно форматируем координаты с ТОЧКОЙ вместо запятой перед отправкой на бэкенд
         var queryParams = new Dictionary<string, string?>
         {
             { "lat", lat.ToString("F6", CultureInfo.InvariantCulture) },
@@ -80,24 +63,25 @@ public class LocalScopeApiClient
         };
 
         if (!string.IsNullOrEmpty(category))
-        {
             queryParams.Add("category", category);
-        }
 
         var url = QueryHelpers.AddQueryString("api/v1/places/nearby", queryParams);
+        var apiUrl = GetApiUrl();
 
         try
         {
-            return await _httpClient.GetFromJsonAsync<PlacesNearbyResponse>(url);
+            return await _httpClient.GetFromJsonAsync<PlacesNearbyResponse>($"{apiUrl}/{url}");
         }
         catch (HttpRequestException)
         {
-            throw new Exception("Ошибка при получении списка заведений неподалеку.");
+            throw new Exception("Ошибка при получении списка заведений.");
         }
     }
+
     public async Task AddToFavoritesAsync(FavoritePlaceRequest request)
     {
-        var response = await _httpClient.PostAsJsonAsync("/api/v1/places/favorites", request);
+        var apiUrl = GetApiUrl();
+        var response = await _httpClient.PostAsJsonAsync($"{apiUrl}/api/v1/places/favorites", request);
         response.EnsureSuccessStatusCode();
     }
 
@@ -107,11 +91,20 @@ public class LocalScopeApiClient
 
         try
         {
-            return await _httpClient.GetFromJsonAsync<PlaceDetailsDto>($"api/v1/places/{placeId}");
+            var apiUrl = GetApiUrl();
+            return await _httpClient.GetFromJsonAsync<PlaceDetailsDto>($"{apiUrl}/api/v1/places/{placeId}");
         }
         catch
         {
             return null;
         }
+    }
+
+    private string GetApiUrl()
+    {
+        // Берёт текущий хост из браузера и заменяет порт на 5108
+        var baseUrl = _httpClient.BaseAddress?.ToString() ?? "";
+        var uri = new Uri(baseUrl);
+        return $"{uri.Scheme}://{uri.Host}:5108";
     }
 }

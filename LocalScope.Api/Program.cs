@@ -34,6 +34,7 @@ builder.Services.AddHttpClient<IWeatherProvider, OpenMeteoClient>(client => {
     client.BaseAddress = new Uri("https://api.open-meteo.com/v1/");
 });
 // -------------------------------------------------------------------------
+builder.WebHost.UseUrls("http://192.168.31.203:5108/");
 
 var app = builder.Build();
 
@@ -43,7 +44,8 @@ app.UseErrorHandling();
 
 // Включаем CORS middleware
 app.UseCors();
-
+app.UseDefaultFiles();    // ← Добавь
+app.UseStaticFiles();     // ← Добавь
 // Настройка Swagger для среды разработки
 if (app.Environment.IsDevelopment())
 {

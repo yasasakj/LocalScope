@@ -7,14 +7,7 @@ var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
-// Настройка базового HttpClient
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
-
-// Настройка типизированного API клиента
-builder.Services.AddHttpClient<LocalScopeApiClient>(client =>
-{
-    // Изменили порт по умолчанию с 5000 на 5108, на котором реально запущен твой бэкенд
-    client.BaseAddress = new Uri(builder.Configuration["ApiBaseUrl"] ?? "http://localhost:5108/");
-});
+builder.Services.AddScoped<LocalScopeApiClient>();
 
 await builder.Build().RunAsync();
